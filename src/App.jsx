@@ -66,36 +66,189 @@ async function loadImage(src){return new Promise(res=>{const img=new Image();img
 const fmtDT=iso=>iso?new Date(iso).toLocaleString("fr-FR"):"—";
 
 async function buildPDF(t){
-  const JsPDF=await loadJsPDF();const doc=new JsPDF({unit:"mm",format:"a4",compress:true});
-  const W=210,ML=18,MR=18,TW=W-ML-MR;let y=0;
-  const chk=(n=10)=>{if(y+n>272){doc.addPage();y=18;}};
-  doc.setFillColor(17,17,17);doc.rect(0,0,W,18,"F");
-  doc.setTextColor(255,255,255);doc.setFontSize(8);doc.setFont("helvetica","bold");doc.setCharSpace(2);doc.text("PIMAK FRANCE",ML,8);
-  doc.setCharSpace(1);doc.setFont("helvetica","normal");doc.setFontSize(6.5);doc.setTextColor(180,180,180);doc.text("SERVICE APRÈS-VENTE",ML,13.5);
-  doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");doc.setFontSize(13);doc.setCharSpace(0);doc.text(t.numero,W-ML,10,{align:"right"});
-  doc.setFontSize(7);doc.setFont("helvetica","normal");doc.setTextColor(180,180,180);doc.text(t.statut==="Livré"?"Livré ✓":t.statut,W-ML,15,{align:"right"});
-  y=26;
-  doc.setTextColor(17,17,17);doc.setFont("helvetica","bold");doc.setFontSize(14);doc.text("Fiche d'intervention",ML,y);y+=5;
-  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(136,136,136);doc.text(`Généré le ${new Date().toLocaleString("fr-FR")}`,ML,y);y+=8;
-  doc.setDrawColor(230,230,230);doc.setLineWidth(0.3);doc.line(ML,y,W-MR,y);y+=7;
-  const rows=[["Client",t.client],["Téléphone",t.clientPhone||"—"],["E-mail",t.clientEmail||"—"],["Équipement",t.equipement],["Technicien",t.technicien||"—"],["Département",t.departement||"—"],["Priorité",t.priorite],["Date d'ouverture",t.date_ouverture],...(t.livreAt?[["Date de livraison",fmtDT(t.livreAt)]]:[])]
-  rows.forEach(([label,val])=>{chk(8);doc.setFont("helvetica","normal");doc.setFontSize(7.5);doc.setTextColor(153,153,153);doc.text(label.toUpperCase(),ML,y);doc.setTextColor(17,17,17);doc.setFontSize(9);const lines=doc.splitTextToSize(String(val),TW-42);doc.text(lines,ML+42,y);y+=Math.max(6,lines.length*4.5);doc.setDrawColor(242,242,242);doc.setLineWidth(0.2);doc.line(ML,y,W-MR,y);y+=4;});y+=3;
-  chk(18);doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(153,153,153);doc.text("PANNE CONSTATÉE",ML,y);y+=5;
-  const pl=doc.splitTextToSize(t.panne,TW-6);doc.setFillColor(250,250,250);doc.rect(ML,y-3,TW,pl.length*5+6,"F");doc.setDrawColor(229,229,229);doc.setLineWidth(0.3);doc.rect(ML,y-3,2,pl.length*5+6,"F");doc.setTextColor(68,68,68);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.text(pl,ML+5,y+1.5);y+=pl.length*5+8;
-  if(t.commentaires){chk(18);doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(153,153,153);doc.text("TRAVAUX EFFECTUÉS",ML,y);y+=5;const nl=doc.splitTextToSize(t.commentaires,TW-6);doc.setFillColor(250,250,250);doc.rect(ML,y-3,TW,nl.length*5+6,"F");doc.setDrawColor(17,17,17);doc.setLineWidth(0.4);doc.rect(ML,y-3,2,nl.length*5+6,"F");doc.setTextColor(68,68,68);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.text(nl,ML+5,y+1.5);y+=nl.length*5+8;}
-  const hasP=PHOTO_PHASES.some(p=>(t.photos?.[p.key]?.length||0)>0);
-  if(hasP){chk(14);doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(153,153,153);doc.text("PHOTOS D'INTERVENTION",ML,y);y+=6;
-    for(const phase of PHOTO_PHASES){const imgs=t.photos?.[phase.key]||[];if(!imgs.length)continue;chk(12);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(136,136,136);doc.text(phase.label.toUpperCase(),ML,y);y+=4;
-      const iW=52,iH=40,gap=4,perRow=3;let col=0,rY=y;
-      for(const photo of imgs){if(col===0)chk(iH+12);const x=ML+col*(iW+gap);try{const ie=await loadImage(photo.src);if(ie){const fmt=photo.src.startsWith("data:image/png")?"PNG":"JPEG";doc.addImage(photo.src,fmt,x,rY,iW,iH,undefined,"MEDIUM");}}catch(_){}doc.setFontSize(5.5);doc.setTextColor(170,170,170);doc.text(photo.ts||"",x+iW/2,rY+iH+3,{align:"center"});doc.setDrawColor(229,229,229);doc.setLineWidth(0.2);doc.rect(x,rY,iW,iH);col++;if(col>=perRow){col=0;rY+=iH+8;y=rY;}}
-      if(col>0){y=rY+iH+8;}y+=2;}}
-  chk(44);y+=2;doc.setDrawColor(229,229,229);doc.setLineWidth(0.3);doc.line(ML,y,W-MR,y);y+=7;
-  doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(153,153,153);doc.text("SIGNATURE DU CLIENT",ML,y);y+=5;
-  if(t.signedBy){doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(17,17,17);doc.text(t.signedBy,ML,y);y+=4;doc.setFontSize(7.5);doc.setTextColor(136,136,136);doc.text(`Signé le ${fmtDT(t.signedAt)}`,ML,y);y+=5;}
-  if(t.signature){const si=await loadImage(t.signature);if(si){doc.setFillColor(255,255,255);doc.setDrawColor(229,229,229);doc.setLineWidth(0.3);doc.roundedRect(ML,y,80,28,2,2,"FD");doc.addImage(t.signature,"PNG",ML+2,y+2,76,24,undefined,"MEDIUM");}y+=32;}
-  const pc=doc.internal.getNumberOfPages();for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(187,187,187);doc.text(`Pimak France · Service Après-Vente · ${t.numero}`,ML,289);doc.text(`Page ${i}/${pc}`,W-ML,289,{align:"right"});}
+  const JsPDF=await loadJsPDF();
+  const doc=new JsPDF({unit:"mm",format:"a4",compress:true});
+  const W=210,ML=20,MR=20,TW=W-ML-MR;
+  let y=0;
+  const chk=(n=10)=>{if(y+n>275){doc.addPage();y=20;}};
+  const line=(col="#e8e8e8",w=0.25)=>{doc.setDrawColor(col);doc.setLineWidth(w);doc.line(ML,y,W-MR,y);};
+  const label=(txt,x,yy)=>{doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(160,160,160);doc.setCharSpace(0.4);doc.text(txt.toUpperCase(),x,yy);doc.setCharSpace(0);};
+  const value=(txt,x,yy,maxW,bold)=>{doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(9);doc.setTextColor(17,17,17);const lines=doc.splitTextToSize(String(txt||"—"),maxW||TW);doc.text(lines,x,yy);return lines.length;};
+
+  // ── Header ──
+  doc.setFillColor(15,15,15);doc.rect(0,0,W,20,"F");
+  doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setCharSpace(2.5);doc.text("PIMAK FRANCE",ML,9);
+  doc.setCharSpace(0.8);doc.setFont("helvetica","normal");doc.setFontSize(6.5);doc.setTextColor(160,160,160);doc.text("SERVICE APRÈS-VENTE",ML,14.5);
+  doc.setTextColor(255,255,255);doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setCharSpace(0);doc.text(t.numero,W-ML,10,{align:"right"});
+  const badge=t.statut==="Livré"?"✓ Livré":t.statut;
+  doc.setFontSize(7);doc.setFont("helvetica","normal");doc.setTextColor(180,180,180);doc.text(badge,W-ML,15.5,{align:"right"});
+  y=28;
+
+  // ── Title ──
+  doc.setFont("helvetica","bold");doc.setFontSize(16);doc.setTextColor(15,15,15);
+  doc.text("Fiche d'intervention",ML,y);y+=5;
+  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(150,150,150);
+  doc.text(`Document généré le ${new Date().toLocaleString("fr-FR")}`,ML,y);y+=8;
+  line("#cccccc",0.4);y+=7;
+
+  // ── Section 1: Informations client (2 colonnes) ──
+  doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setCharSpace(0.3);
+  doc.text("INFORMATIONS CLIENT",ML,y);doc.setCharSpace(0);y+=5;
+  const col1=ML,col2=ML+TW/2+4,colW=TW/2-4;
+  const infoRows=[
+    [{l:"Client",v:t.client,bold:true},{l:"Équipement",v:t.equipement,bold:true}],
+    [{l:"Téléphone",v:t.clientPhone||"—"},{l:"Département",v:t.departement||"—"}],
+    [{l:"Adresse e-mail",v:t.clientEmail||"—"},{l:"Priorité",v:t.priorite}],
+    [{l:"Date d'ouverture",v:t.date_ouverture},{l:"Date de clôture",v:t.date_cloture||"—"}],
+    ...(t.livreAt?[[{l:"Date de livraison",v:fmtDT(t.livreAt)},{l:"Statut",v:t.statut}]]:[]),
+  ];
+  infoRows.forEach(row=>{
+    chk(10);
+    label(row[0].l,col1,y+3.5);
+    const n1=value(row[0].v,col1,y+7.5,colW,row[0].bold);
+    if(row[1]){label(row[1].l,col2,y+3.5);value(row[1].v,col2,y+7.5,colW,row[1].bold);}
+    y+=Math.max(n1,1)*4.5+9;
+    line();y+=4;
+  });
+  y+=3;
+
+  // ── Section 2: Intervenants (qui a fait quoi) ──
+  chk(24);
+  doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setCharSpace(0.3);
+  doc.text("INTERVENANTS",ML,y);doc.setCharSpace(0);y+=5;
+  const actors=[
+    {l:"Ouvert par",v:t.createdBy||"—"},
+    {l:"Technicien assigné",v:t.technicien||"Non assigné"},
+    ...(t.signedBy?[{l:"Livraison signée par",v:t.signedBy},{l:"Date de signature",v:fmtDT(t.signedAt)}]:[]),
+  ];
+  actors.forEach(a=>{
+    chk(10);
+    label(a.l,ML,y+3.5);value(a.v,ML+55,y+3.5,TW-55,false);
+    y+=9;line();y+=3;
+  });
+  y+=4;
+
+  // ── Section 3: Panne ──
+  chk(20);
+  doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setCharSpace(0.3);
+  doc.text("PANNE CONSTATÉE",ML,y);doc.setCharSpace(0);y+=5;
+  doc.setFillColor(248,248,248);
+  const pl=doc.splitTextToSize(t.panne||"—",TW-8);
+  const ph=pl.length*5+8;
+  doc.rect(ML,y-2,TW,ph,"F");
+  doc.setFillColor(15,15,15);doc.rect(ML,y-2,2.5,ph,"F");
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(50,50,50);
+  doc.text(pl,ML+6,y+3);y+=ph+6;
+
+  // ── Section 4: Travaux ──
+  if(t.commentaires){
+    chk(20);
+    doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setCharSpace(0.3);
+    doc.text("TRAVAUX EFFECTUÉS ET NOTES",ML,y);doc.setCharSpace(0);y+=5;
+    doc.setFillColor(248,248,248);
+    const nl=doc.splitTextToSize(t.commentaires,TW-8);
+    const nh=nl.length*5+8;
+    doc.rect(ML,y-2,TW,nh,"F");
+    doc.setFillColor(15,15,15);doc.rect(ML,y-2,2.5,nh,"F");
+    doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(50,50,50);
+    doc.text(nl,ML+6,y+3);y+=nh+6;
+  }
+
+  // ── Section 5: Photos (grille régulière) ──
+  const hasPhotos=PHOTO_PHASES.some(p=>(t.photos?.[p.key]?.length||0)>0);
+  if(hasPhotos){
+    chk(18);
+    doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setCharSpace(0.3);
+    doc.text("PHOTOS D'INTERVENTION",ML,y);doc.setCharSpace(0);y+=7;
+
+    for(const phase of PHOTO_PHASES){
+      const imgs=t.photos?.[phase.key]||[];
+      if(!imgs.length)continue;
+      chk(16);
+      // Phase label
+      doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(120,120,120);
+      doc.text(phase.label,ML,y);y+=5;
+
+      // Grid: 3 photos per row, square 52x52, gap 5
+      const COLS=3, IMG_W=55, IMG_H=44, GAP_X=5, GAP_Y=8;
+      const rowCount=Math.ceil(imgs.length/COLS);
+
+      for(let row=0;row<rowCount;row++){
+        chk(IMG_H+GAP_Y+8);
+        for(let col=0;col<COLS;col++){
+          const idx=row*COLS+col;
+          if(idx>=imgs.length)break;
+          const photo=imgs[idx];
+          const x=ML+col*(IMG_W+GAP_X);
+          const ry=y;
+          try{
+            const ie=await loadImage(photo.src);
+            if(ie){
+              const fmt=photo.src.startsWith("data:image/png")?"PNG":"JPEG";
+              doc.addImage(photo.src,fmt,x,ry,IMG_W,IMG_H,undefined,"MEDIUM");
+            }
+          }catch(_){}
+          // Thin border
+          doc.setDrawColor(220,220,220);doc.setLineWidth(0.2);doc.rect(x,ry,IMG_W,IMG_H);
+          // Timestamp badge
+          doc.setFillColor(0,0,0,0.55);
+          doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(160,160,160);
+          doc.text(photo.ts||"",x+IMG_W/2,ry+IMG_H+4,{align:"center"});
+        }
+        y+=IMG_H+GAP_Y+5;
+      }
+      y+=3;
+    }
+  }
+
+  // ── Section 6: Signature ──
+  chk(52);y+=2;
+  line("#cccccc",0.4);y+=8;
+  doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(80,80,80);doc.setCharSpace(0.3);
+  doc.text("SIGNATURE ET VALIDATION",ML,y);doc.setCharSpace(0);y+=6;
+
+  if(t.signedBy){
+    label("Signé par",ML,y+3.5);value(t.signedBy,ML+45,y+3.5,TW-45,true);y+=9;
+    label("Date et heure",ML,y+3.5);value(fmtDT(t.signedAt),ML+45,y+3.5,TW-45,false);y+=9;
+    y+=2;
+  }
+  if(t.signature){
+    const si=await loadImage(t.signature);
+    if(si){
+      // Signature box
+      doc.setFillColor(255,255,255);doc.setDrawColor(210,210,210);doc.setLineWidth(0.3);
+      doc.roundedRect(ML,y,90,32,2,2,"FD");
+      doc.addImage(t.signature,"PNG",ML+3,y+3,84,26,undefined,"MEDIUM");
+      // Acceptance text
+      doc.setFont("helvetica","normal");doc.setFontSize(7.5);doc.setTextColor(100,100,100);
+      const acceptTxt="Le signataire certifie avoir reçu l'équipement en bon état de fonctionnement
+et valide les travaux effectués décrits dans ce document.";
+      const atLines=doc.splitTextToSize(acceptTxt,TW-98);
+      doc.text(atLines,ML+95,y+10);
+    }
+    y+=40;
+  } else {
+    doc.setFillColor(250,250,250);doc.setDrawColor(210,210,210);doc.setLineWidth(0.3);
+    doc.roundedRect(ML,y,90,32,2,2,"FD");
+    doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(180,180,180);
+    doc.text("Signature à apposer",ML+45,y+18,{align:"center"});
+    y+=40;
+  }
+
+  // ── Footer on all pages ──
+  const pc=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pc;i++){
+    doc.setPage(i);
+    doc.setFillColor(245,245,245);doc.rect(0,283,W,14,"F");
+    doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(160,160,160);
+    doc.setCharSpace(0);
+    doc.text("Pimak France  ·  Service Après-Vente  ·  "+t.numero,ML,290);
+    doc.text(`Page ${i} / ${pc}`,W-ML,290,{align:"right"});
+    doc.text(`Généré le ${new Date().toLocaleString("fr-FR")}`,W/2,290,{align:"center"});
+  }
   return doc.output("blob");
 }
+
 async function downloadPDF(t){const blob=await buildPDF(t);const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`${t.numero}-rapport.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 async function getPDFDataURL(t){const blob=await buildPDF(t);return new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(blob);});}
 async function loadEJS(){if(window.emailjs)return;await new Promise((res,rej)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);});window.emailjs.init({publicKey:EJS.publicKey});}
@@ -155,6 +308,8 @@ export default function App(){
   const [phase,  setPhase] = useState("reception");
   const [dname,  setDname] = useState("");
   const [eUser,  setEUser] = useState(null);
+  const [delUser,setDelUser]= useState(null);   // kullanıcı silme
+  const [xferTo, setXferTo] = useState("");     // ticket transfer hedefi
   const [sending,setSend]  = useState(false);
 
   // Persist prefs
@@ -187,7 +342,7 @@ export default function App(){
 
   const t=(key,vars)=>tx(lang,key,vars);
   const say=(msg,err)=>{setToast({msg,err});setTimeout(()=>setToast(null),2800);};
-  const closeSheet=()=>{setSheet(null);setDname("");setEUser(null);};
+  const closeSheet=()=>{setSheet(null);setDname("");setEUser(null);setDelUser(null);setXferTo("");};
 
   const isAdmin   = user?.role==="admin";
   const isManager = user?.role==="manager" || isAdmin;
@@ -263,21 +418,42 @@ export default function App(){
     }catch(e){say("Erreur",true);}
   };
 
+  /* ── Kullanıcı sil: önce ticketları transfer et ── */
+  const deleteUser=async(u,transferToName)=>{
+    // Aktif ticketları transfer et
+    const activeTickets=tix.filter(tk=>tk.technicien===u.name&&tk.statut!=="Livré"&&tk.statut!=="Clôturé");
+    for(const tk of activeTickets){
+      await mut(tk.fireId||tk.id,{technicien:transferToName||""});
+    }
+    // Kullanıcıyı sil
+    try{
+      if(u.fireId)await deleteDoc(doc(db,"users",u.fireId));
+      setUsers(p=>p.filter(x=>x.fireId!==u.fireId&&x.id!==u.id));
+    }catch(e){setUsers(p=>p.filter(x=>x.fireId!==u.fireId&&x.id!==u.id));}
+    closeSheet();
+    say(`${u.name} supprimé${activeTickets.length>0?` · ${activeTickets.length} ticket(s) transféré(s)`:""}`)  ;
+  };
+
   const printQR=(tk,appUrl)=>{
-    const ticketUrl=`${appUrl}?ticket=${tk.numero}`;
-    const qr=`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(ticketUrl)}&bgcolor=ffffff&color=111111&margin=12`;
+    // QR içinde sadece ticket numarası — uygulama içi scanner ile okunur
+    const qr=`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(tk.numero)}&bgcolor=ffffff&color=111111&margin=12`;
     const w=window.open("","_blank");
     w.document.write(`<html><head><title>${tk.numero}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;font-family:-apple-system,sans-serif}.c{border:1.5px solid #e5e5e5;border-radius:14px;padding:22px;text-align:center;width:240px}.b{font-size:10px;font-weight:700;letter-spacing:3px;color:#111;margin-bottom:2px}.s{font-size:8px;color:#aaa;letter-spacing:1px;margin-bottom:14px}img{width:156px;height:156px;display:block;margin:0 auto}.n{font-size:19px;font-weight:700;margin:12px 0 3px}.cl{font-size:11px;color:#555}.eq{font-size:10px;color:#aaa;margin-top:2px}.d{font-size:9px;color:#ccc;margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0}@media print{body{-webkit-print-color-adjust:exact}}</style></head><body onload="window.print()"><div class="c"><div class="b">PIMAK FRANCE</div><div class="s">SERVICE APRÈS-VENTE</div><img src="${qr}"/><div class="n">${tk.numero}</div><div class="cl">${tk.client}</div><div class="eq">${tk.equipement}</div><div class="d">Ouvert le ${tk.date_ouverture}</div></div></body></html>`);
     w.document.close();
   };
 
-  // Handle ?ticket=PI-xxx deep link
+  // Deep link: ?ticket=PI-001 veya #PI-001 veya localStorage ile
   useEffect(()=>{
     if(!dbReady||!tix.length)return;
+    // URL param
     const params=new URLSearchParams(window.location.search);
-    const num=params.get("ticket");
+    let num=params.get("ticket");
+    // Hash
+    if(!num&&window.location.hash) num=window.location.hash.replace("#","").trim();
+    // localStorage (uygulama içi scanner set eder)
+    if(!num){num=localStorage.getItem("pimak_scan");localStorage.removeItem("pimak_scan");}
     if(num){
-      const found=tix.find(tk=>tk.numero===num);
+      const found=tix.find(tk=>tk.numero===num.toUpperCase().trim());
       if(found){openTicket(found);window.history.replaceState({},"",window.location.pathname);}
     }
   },[dbReady,tix]);
@@ -307,7 +483,7 @@ export default function App(){
   const myTix=isTech?tix.filter(tk=>tk.technicien===user?.name&&tk.statut!=="Livré"):[];
   const appUrl=window.location.origin+window.location.pathname;
 
-  const sheetTitles={qr:t("sheet_qr"),scan:t("sheet_scan"),deliver:t("sheet_deliver"),sig:t("sheet_sig"),photos:t("sheet_photos"),newUser:t("sheet_new_user"),editUser:t("sheet_edit_user"),editTicket:t("sheet_edit_ticket"),deleteConfirm:t("sheet_delete")};
+  const sheetTitles={qr:t("sheet_qr"),scan:t("sheet_scan"),deliver:t("sheet_deliver"),sig:t("sheet_sig"),photos:t("sheet_photos"),newUser:t("sheet_new_user"),editUser:t("sheet_edit_user"),editTicket:t("sheet_edit_ticket"),deleteConfirm:t("sheet_delete"),deleteUser:"Supprimer l'utilisateur"};
 
   if(!user)return <LoginScreen users={users} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} CSS={CSS} onLogin={u=>{setUser(u);setView("dashboard");}}/>;
 
@@ -362,6 +538,30 @@ export default function App(){
             <Btn color="red" onClick={()=>deleteTicket(sel)}>{t("btn_confirm_delete")}</Btn>
             <Btn variant="secondary" onClick={closeSheet}>{t("btn_cancel")}</Btn>
           </div>}
+          {sheet==="deleteUser"&&delUser&&isAdmin&&(()=>{
+            const activeCount=tix.filter(tk=>tk.technicien===delUser.name&&tk.statut!=="Livré"&&tk.statut!=="Clôturé").length;
+            const otherTechs=users.filter(u=>u.active&&u.role==="technician"&&(u.fireId||u.id)!==(delUser.fireId||delUser.id));
+            return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{background:"var(--redbg)",border:"1px solid var(--redborder)",borderRadius:R.md,padding:"14px"}}>
+                <div style={{fontSize:14,fontWeight:700,color:"var(--red)",marginBottom:3}}>{delUser.name}</div>
+                <div style={{fontSize:12,color:"var(--t1)"}}>{delUser.role==="admin"?t("role_admin"):delUser.role==="manager"?t("role_manager"):t("role_tech")} · {delUser.email}</div>
+                {activeCount>0&&<div style={{fontSize:12,color:"var(--red)",marginTop:8,fontWeight:600}}>⚠ {activeCount} ticket(s) actif(s) à transférer</div>}
+              </div>
+              {activeCount>0&&<div>
+                <FL label="Transférer les tickets à">
+                  <select value={xferTo} onChange={e=>setXferTo(e.target.value)} style={{width:"100%"}}>
+                    <option value="">— Laisser non assigné —</option>
+                    {otherTechs.map(u=><option key={u.fireId||u.id} value={u.name}>{u.name}</option>)}
+                  </select>
+                </FL>
+              </div>}
+              <div style={{fontSize:11,color:"var(--t2)",background:"var(--s1)",borderRadius:R.md,padding:"10px 12px"}}>
+                Cette action est irréversible. L'utilisateur sera définitivement supprimé.
+              </div>
+              <Btn color="red" onClick={()=>deleteUser(delUser,xferTo)}>Supprimer définitivement</Btn>
+              <Btn variant="secondary" onClick={closeSheet}>{t("btn_cancel")}</Btn>
+            </div>;
+          })()}
         </Sheet>
       </div>}
 
@@ -518,9 +718,10 @@ export default function App(){
                   <div style={{fontSize:11,color:"var(--t2)"}}>{u.role==="admin"?t("role_admin"):u.role==="manager"?t("role_manager"):t("role_tech")} · {u.email}</div>
                 </div>
               </div>
-              {isAdmin&&u.id!==user.id&&u.fireId!==user.fireId&&<div style={{display:"flex",gap:5}}>
+              {isAdmin&&(u.id!==user.id&&u.fireId!==user.fireId)&&<div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
                 <MiniBtn onClick={()=>{setEUser(u);setSheet("editUser");}}>{t("btn_edit")}</MiniBtn>
                 <MiniBtn onClick={()=>{const id=u.fireId||u.id;if(u.fireId)updateDoc(doc(db,"users",u.fireId),{active:!u.active}).catch(()=>{});setUsers(p=>p.map(x=>(x.id===id||x.fireId===id)?{...x,active:!x.active}:x));say(u.active?t("t_off"):t("t_on"));}}>{u.active?t("btn_off"):t("btn_on")}</MiniBtn>
+                <MiniBtn onClick={()=>{setDelUser(u);setXferTo("");setSheet("deleteUser");}}>🗑</MiniBtn>
               </div>}
             </div>)}
           </div>
@@ -539,18 +740,18 @@ export default function App(){
       </main>
 
       {/* ══ BOTTOM NAV ══ */}
-      <nav style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:isDark?"rgba(10,10,10,0.95)":"rgba(255,255,255,0.95)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderTop:"1px solid var(--b0)",height:"var(--nav-h)",paddingBottom:"env(safe-area-inset-bottom,8px)",display:"flex",alignItems:"stretch"}}>
+      <nav style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:isDark?"#111111":"#1a1a1a",borderTop:`2px solid ${isDark?"#2a2a2a":"#2a2a2a"}`,height:"var(--nav-h)",paddingBottom:"env(safe-area-inset-bottom,8px)",display:"flex",alignItems:"stretch"}}>
         {[
-          {k:"dashboard", icon:"⊞", label:t("nav_home")},
-          {k:"list",      icon:"≡", label:t("nav_tickets")},
-          ...(!isTech?[{k:"new",icon:"+",label:t("nav_new")}]:[]),
-          {k:"settings",  icon:"⊙", label:t("nav_team")},
+          {k:"dashboard", icon:"◫",  label:t("nav_home")},
+          {k:"list",      icon:"≣",  label:t("nav_tickets")},
+          ...(!isTech?[{k:"new",icon:"＋",label:t("nav_new")}]:[]),
+          {k:"settings",  icon:"⊕",  label:t("nav_team")},
         ].map(nav=>{
           const active=view===nav.k;
-          return <button key={nav.k} onClick={()=>{setView(nav.k);setSel(null);}} style={{flex:1,background:"none",border:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",position:"relative",paddingTop:6}}>
-            {active&&<span style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:28,height:3,borderRadius:"0 0 3px 3px",background:"var(--t0)",display:"block"}}/>}
-            <span style={{fontSize:nav.k==="new"?22:18,lineHeight:1,color:active?"var(--t0)":"var(--t2)",transition:"color .15s",fontWeight:nav.k==="new"?300:400}}>{nav.icon}</span>
-            <span style={{fontSize:10,fontWeight:active?700:400,color:active?"var(--t0)":"var(--t2)",letterSpacing:"0.02em",transition:"color .15s"}}>{nav.label}</span>
+          return <button key={nav.k} onClick={()=>{setView(nav.k);setSel(null);}} style={{flex:1,background:"none",border:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,cursor:"pointer",position:"relative",paddingTop:8}}>
+            {active&&<span style={{position:"absolute",top:0,left:"50%",transform:"translateX(-50%)",width:32,height:3,borderRadius:"0 0 4px 4px",background:"#ffffff",display:"block"}}/>}
+            <span style={{fontSize:nav.k==="new"?26:21,lineHeight:1,color:active?"#ffffff":"rgba(255,255,255,0.38)",transition:"color .15s"}}>{nav.icon}</span>
+            <span style={{fontSize:11,fontWeight:active?700:400,color:active?"#ffffff":"rgba(255,255,255,0.38)",letterSpacing:"0.02em",transition:"color .15s"}}>{nav.label}</span>
           </button>;
         })}
       </nav>
@@ -705,8 +906,8 @@ function QRSticker({t:ticket,lang,appUrl,onPrint}){
   const tl=k=>tx(lang,k);
   const canvasRef=useRef();const [ready,setReady]=useState(false);const [saving,setSaving]=useState(false);
   // QR encodes the actual ticket URL
-  const ticketUrl=`${appUrl}?ticket=${ticket.numero}`;
-  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(ticketUrl)}&bgcolor=ffffff&color=111111&margin=10`;
+  // QR içinde ticket numarası - uygulama scanner ile okur
+  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(ticket.numero)}&bgcolor=ffffff&color=111111&margin=10`;
   useEffect(()=>{
     const canvas=canvasRef.current;if(!canvas)return;
     const ctx=canvas.getContext("2d");const W=400,H=500;canvas.width=W;canvas.height=H;
@@ -755,7 +956,14 @@ function ScanSheet({tickets,onSelect,lang}){
   const t=k=>tx(lang,k);
   const [val,setVal]=useState("");const videoRef=useRef();const [camOn,setCamOn]=useState(false);const [camErr,setCamErr]=useState(false);
   useEffect(()=>{let stream;if(!navigator.mediaDevices?.getUserMedia){setCamErr(true);return;}navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(s=>{stream=s;if(videoRef.current){videoRef.current.srcObject=s;videoRef.current.play();setCamOn(true);}}).catch(()=>setCamErr(true));return()=>stream?.getTracks().forEach(tk=>tk.stop());},[]);
-  const tryLookup=()=>{const found=tickets.find(tk=>tk.numero===val.trim().toUpperCase());if(found)onSelect(found);};
+  const tryLookup=(input)=>{
+    const raw=(input||val).trim().toUpperCase();
+    // Extract PI-xxx from raw text or URL
+    const match=raw.match(/PI-\d+/);
+    const numero=match?match[0]:raw;
+    const found=tickets.find(tk=>tk.numero===numero);
+    if(found)onSelect(found);
+  };
   return <div>
     <div style={{borderRadius:R.lg,overflow:"hidden",background:"var(--s2)",aspectRatio:"4/3",marginBottom:12,position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
       {!camErr?<><video ref={videoRef} playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:camOn?"block":"none"}}/>{!camOn&&<div style={{fontSize:11,color:"var(--t2)"}}>…</div>}<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}><div style={{width:148,height:148,border:"2px solid rgba(255,255,255,.8)",borderRadius:R.md,boxShadow:"0 0 0 9999px rgba(0,0,0,0.45)"}}/></div></>
