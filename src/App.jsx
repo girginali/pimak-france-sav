@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { db } from "./firebase";
+import { collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, serverTimestamp, query, orderBy } from "firebase/firestore";
 
 /* ═══════════════════════════════════════════
    DESIGN TOKENS
@@ -184,6 +186,14 @@ const T = {
     dept_sav:"SAV", dept_commercial:"Commercial", dept_direction:"Direction", dept_logistics:"Logistique",
     /* Lang picker */
     language:"Langue",
+    btn_edit_ticket:"Modifier le ticket",
+    btn_delete_ticket:"Supprimer le ticket",
+    delete_confirm:"Supprimer cette intervention ?",
+    delete_confirm_sub:"Cette action est irréversible.",
+    btn_confirm_delete:"Supprimer définitivement",
+    btn_cancel:"Annuler",
+    toast_deleted:"Intervention supprimée",
+    sheet_edit_ticket:"Modifier l'intervention",
   },
   en: {
     nav_home:"Home", nav_tickets:"Jobs", nav_new:"New", nav_team:"Team",
@@ -302,6 +312,14 @@ const T = {
     prio_normal:"Normal", prio_high:"High", prio_urgent:"Urgent",
     dept_sav:"ASS", dept_commercial:"Commercial", dept_direction:"Management", dept_logistics:"Logistics",
     language:"Language",
+    btn_edit_ticket:"Edit ticket",
+    btn_delete_ticket:"Delete ticket",
+    delete_confirm:"Delete this job?",
+    delete_confirm_sub:"This action cannot be undone.",
+    btn_confirm_delete:"Delete permanently",
+    btn_cancel:"Cancel",
+    toast_deleted:"Job deleted",
+    sheet_edit_ticket:"Edit job",
   },
   tr: {
     nav_home:"Anasayfa", nav_tickets:"Servisler", nav_new:"Yeni", nav_team:"Ekip",
@@ -420,6 +438,14 @@ const T = {
     prio_normal:"Normal", prio_high:"Yüksek", prio_urgent:"Acil",
     dept_sav:"SAT", dept_commercial:"Ticari", dept_direction:"Yönetim", dept_logistics:"Lojistik",
     language:"Dil",
+    btn_edit_ticket:"Kaydı düzenle",
+    btn_delete_ticket:"Kaydı sil",
+    delete_confirm:"Bu servis kaydı silinsin mi?",
+    delete_confirm_sub:"Bu işlem geri alınamaz.",
+    btn_confirm_delete:"Kalıcı olarak sil",
+    btn_cancel:"İptal",
+    toast_deleted:"Kayıt silindi",
+    sheet_edit_ticket:"Kaydı düzenle",
   },
   es: {
     nav_home:"Inicio", nav_tickets:"Servicios", nav_new:"Nuevo", nav_team:"Equipo",
@@ -538,6 +564,14 @@ const T = {
     prio_normal:"Normal", prio_high:"Alta", prio_urgent:"Urgente",
     dept_sav:"SAT", dept_commercial:"Comercial", dept_direction:"Dirección", dept_logistics:"Logística",
     language:"Idioma",
+    btn_edit_ticket:"Editar servicio",
+    btn_delete_ticket:"Eliminar servicio",
+    delete_confirm:"¿Eliminar este servicio?",
+    delete_confirm_sub:"Esta acción no se puede deshacer.",
+    btn_confirm_delete:"Eliminar definitivamente",
+    btn_cancel:"Cancelar",
+    toast_deleted:"Servicio eliminado",
+    sheet_edit_ticket:"Editar servicio",
   },
 };
 
@@ -812,7 +846,8 @@ export default function App(){
   const [lang,   setLang]  = useState("fr");
   const [user,   setUser]  = useState(null);
   const [users,  setUsers] = useState(INIT_USERS);
-  const [tix,    setTix]   = useState(INIT_TICKETS);
+  const [tix,    setTix]   = useState([]);
+  const [dbReady,setDbReady]= useState(false);
   const [view,   setView]  = useState("dashboard");
   const [sel,    setSel]   = useState(null);
   const [sheet,  setSheet] = useState(null);
@@ -823,51 +858,106 @@ export default function App(){
   const [eUser,  setEUser] = useState(null);
   const [sending,setSend]  = useState(false);
 
+  /* ── Firebase: tickets gerçek zamanlı dinle ── */
+  useEffect(()=>{
+    const q = query(collection(db,"tickets"), orderBy("createdAt","desc"));
+    const unsub = onSnapshot(q, snap=>{
+      const data = snap.docs.map(d=>({...d.data(), fireId:d.id}));
+      setTix(data);
+      setDbReady(true);
+      setSel(prev=>prev ? (data.find(tk=>tk.fireId===prev.fireId)||prev) : null);
+    }, ()=>{ setTix(INIT_TICKETS); setDbReady(true); });
+    return ()=>unsub();
+  },[]);
+
+  /* ── Firebase: kullanıcıları dinle ── */
+  useEffect(()=>{
+    const unsub = onSnapshot(collection(db,"users"), snap=>{
+      if(!snap.empty) setUsers(snap.docs.map(d=>({...d.data(), fireId:d.id})));
+    }, ()=>{});
+    return ()=>unsub();
+  },[]);
+
   const t=(key,vars)=>tx(lang,key,vars);
   const say=(msg,err)=>{setToast({msg,err});setTimeout(()=>setToast(null),2800);};
   const closeSheet=()=>{setSheet(null);setDname("");setEUser(null);};
   const isAdmin=user?.role==="admin";
   const isTech =user?.role==="technician";
 
-  const mut=(id,patch)=>{
+  /* ── Ticket güncelle ── */
+  const mut=async(id,patch)=>{
     const fn=tk=>{
-      if(tk.id!==id)return tk;
+      if(tk.fireId!==id&&tk.id!==id)return tk;
       const u={...tk,...patch};
       if(patch.statut==="Clôturé"&&!tk.date_cloture)u.date_cloture=new Date().toISOString().split("T")[0];
       return u;
     };
-    setTix(p=>p.map(fn)); setSel(p=>p?.id===id?fn(p):p);
+    setTix(p=>p.map(fn)); setSel(p=>p?fn(p):p);
+    try{
+      const tk=tix.find(t=>t.fireId===id||t.id===id);
+      if(tk?.fireId){
+        const cleanPatch={...patch};
+        if(patch.statut==="Clôturé"&&!tk.date_cloture) cleanPatch.date_cloture=new Date().toISOString().split("T")[0];
+        await updateDoc(doc(db,"tickets",tk.fireId), cleanPatch);
+      }
+    }catch(e){console.warn("Firestore update:",e);}
   };
 
+  /* ── Fotoğraf ekle ── */
   const addPhotos=async(id,ph,files)=>{
     const arr=await Promise.all(Array.from(files).map(toB64));
     const photos=arr.map(src=>({src,id:uid(),ts:new Date().toLocaleString("fr-FR")}));
-    const fn=tk=>tk.id!==id?tk:{...tk,photos:{...tk.photos,[ph]:[...(tk.photos[ph]||[]),...photos]}};
-    setTix(p=>p.map(fn)); setSel(p=>p?.id===id?fn(p):p);
+    const tk=tix.find(t=>t.fireId===id||t.id===id);
+    if(!tk)return;
+    const updatedPhotos={...tk.photos,[ph]:[...(tk.photos[ph]||[]),...photos]};
+    await mut(id,{photos:updatedPhotos});
     say(t("toast_photos_added",{n:photos.length}));
   };
 
-  const rmPhoto=(id,ph,pid)=>{
-    const fn=tk=>tk.id!==id?tk:{...tk,photos:{...tk.photos,[ph]:tk.photos[ph].filter(x=>x.id!==pid)}};
-    setTix(p=>p.map(fn)); setSel(p=>p?.id===id?fn(p):p);
+  /* ── Fotoğraf sil ── */
+  const rmPhoto=async(id,ph,pid)=>{
+    const tk=tix.find(t=>t.fireId===id||t.id===id);
+    if(!tk)return;
+    const updatedPhotos={...tk.photos,[ph]:tk.photos[ph].filter(x=>x.id!==pid)};
+    await mut(id,{photos:updatedPhotos});
     say(t("toast_photo_removed"));
   };
 
+  /* ── Yeni ticket oluştur ── */
   const createTicket=async(form)=>{
-    const newId=_id++;
-    const tk={...form,id:newId,numero:`PI-${String(newId).padStart(3,"0")}`,date_ouverture:new Date().toISOString().split("T")[0],date_cloture:""};
-    setTix(p=>[tk,...p]); setSel(tk); setView("detail"); setSheet("qr");
-    say(t("toast_created",{n:tk.numero}));
+    const ts=Date.now();
+    const numero=`PI-${String(ts).slice(-5)}`;
+    const tk={...form,numero,date_ouverture:new Date().toISOString().split("T")[0],date_cloture:"",createdAt:serverTimestamp(),createdBy:user?.name||""};
+    let fireId=null;
+    try{
+      const ref=await addDoc(collection(db,"tickets"),tk);
+      fireId=ref.id; tk.fireId=fireId;
+    }catch(e){ tk.id=_id++; setTix(p=>[tk,...p]); }
+    setSel(tk); setView("detail"); setSheet("qr");
+    say(t("toast_created",{n:numero}));
     setSend(true); await mailNewTicket(tk); setSend(false);
   };
 
+  /* ── Teslim onayla ── */
   const confirmDelivery=async(sig)=>{
     const now=new Date().toISOString();
-    const updated={...sel,signature:sig,signedBy:dname,signedAt:now,livreAt:now,statut:"Livré"};
-    mut(sel.id,{signature:sig,signedBy:dname,signedAt:now,livreAt:now,statut:"Livré"});
+    const patch={signature:sig,signedBy:dname,signedAt:now,livreAt:now,statut:"Livré"};
+    const updated={...sel,...patch};
+    await mut(sel.fireId||sel.id, patch);
     closeSheet(); say(t("toast_delivery_ok"));
     setSend(true); await mailDelivery(updated); setSend(false);
     say(t("toast_mail_ok"));
+  };
+
+  /* ── Ticket sil (sadece admin) ── */
+  const deleteTicket=async(tk)=>{
+    try{
+      if(tk.fireId) await deleteDoc(doc(db,"tickets",tk.fireId));
+      setTix(p=>p.filter(x=>x.fireId!==tk.fireId&&x.id!==tk.id));
+      if(sel?.fireId===tk.fireId||sel?.id===tk.id){ setSel(null); setView("list"); }
+      closeSheet();
+      say(t("toast_deleted"));
+    }catch(e){ say("Erreur suppression",true); }
   };
 
   const printQR=tk=>{
@@ -891,7 +981,15 @@ export default function App(){
 
   if(!user) return <LoginScreen users={users} lang={lang} setLang={setLang} onLogin={u=>{setUser(u);setView("dashboard");}}/>;
 
-  const sheetTitles={qr:t("sheet_qr"),scan:t("sheet_scan"),deliver:t("sheet_deliver"),sig:t("sheet_sig"),photos:t("sheet_photos"),newUser:t("sheet_new_user"),editUser:t("sheet_edit_user")};
+  if(!dbReady) return(
+    <div style={{background:"var(--bg)",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:FONT}}>
+      <style>{CSS}</style>
+      <div style={{width:32,height:32,border:"2px solid var(--b1)",borderTopColor:"var(--t0)",borderRadius:"50%",animation:"spin .8s linear infinite",marginBottom:16}}/>
+      <div style={{fontSize:12,color:"var(--t2)"}}>Connexion à la base de données…</div>
+    </div>
+  );
+
+  const sheetTitles={qr:t("sheet_qr"),scan:t("sheet_scan"),deliver:t("sheet_deliver"),sig:t("sheet_sig"),photos:t("sheet_photos"),newUser:t("sheet_new_user"),editUser:t("sheet_edit_user"),editTicket:t("sheet_edit_ticket"),deleteConfirm:t("delete_confirm")};
 
   const PRIOS=()=>[t("prio_normal"),t("prio_high"),t("prio_urgent")];
   const PRIO_MAP={"Normale":t("prio_normal"),"Haute":t("prio_high"),"Urgente":t("prio_urgent")};
@@ -933,8 +1031,19 @@ export default function App(){
                 <PhotoZone lang={lang} photos={sel.photos?.[phase]||[]} onAdd={f=>addPhotos(sel.id,phase,f)} onRemove={pid=>rmPhoto(sel.id,phase,pid)} onView={setLb}/>
               </div>
             )}
-            {sheet==="newUser"&&isAdmin&&<UserForm lang={lang} onSave={u=>{setUsers(p=>[...p,{...u,id:uid(),active:true}]);closeSheet();say(t("toast_user_added",{n:u.name}));}}/>}
-            {sheet==="editUser"&&eUser&&isAdmin&&<UserForm lang={lang} init={eUser} onSave={u=>{setUsers(p=>p.map(x=>x.id===eUser.id?{...x,...u}:x));closeSheet();say(t("toast_modified"));}}/>}
+            {sheet==="newUser"&&isAdmin&&<UserForm lang={lang} onSave={async u=>{try{await addDoc(collection(db,"users"),{...u,active:true});}catch(e){setUsers(p=>[...p,{...u,id:uid(),active:true}]);}closeSheet();say(t("toast_user_added",{n:u.name}));}}/>}
+            {sheet==="editUser"&&eUser&&isAdmin&&<UserForm lang={lang} init={eUser} onSave={async u=>{try{if(eUser.fireId)await updateDoc(doc(db,"users",eUser.fireId),u);else setUsers(p=>p.map(x=>x.id===eUser.id?{...x,...u}:x));}catch(e){setUsers(p=>p.map(x=>x.id===eUser.id?{...x,...u}:x));}closeSheet();say(t("toast_modified"));}}/>}
+            {sheet==="editTicket"&&sel&&isAdmin&&<TicketEditForm lang={lang} ticket={sel} onSave={async form=>{await mut(sel.fireId||sel.id,form);closeSheet();say(t("toast_modified"));}}/>}
+            {sheet==="deleteConfirm"&&sel&&isAdmin&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div style={{background:"var(--redbg)",border:"1px solid var(--redborder)",borderRadius:R.md,padding:"14px"}}>
+                  <div style={{fontSize:14,fontWeight:600,color:"var(--red)",marginBottom:4}}>{sel.numero} — {sel.client}</div>
+                  <div style={{fontSize:12,color:"var(--red)",opacity:.8}}>{t("delete_confirm_sub")}</div>
+                </div>
+                <Btn color="red" onClick={()=>deleteTicket(sel)}>{t("btn_confirm_delete")}</Btn>
+                <Btn variant="secondary" onClick={closeSheet}>{t("btn_cancel")}</Btn>
+              </div>
+            )}
           </Sheet>
         </div>
       )}
@@ -1056,6 +1165,10 @@ export default function App(){
               )}
               <Btn color="amber" onClick={()=>setSheet("qr")}>{t("btn_qr")}</Btn>
               <Btn color="purple" onClick={async()=>{say(t("toast_pdf"));await downloadPDF(sel);say(t("toast_pdf_ok"));}}>{t("download_pdf")}</Btn>
+              {isAdmin&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginTop:4}}>
+                <Btn color="black" onClick={()=>setSheet("editTicket")}>{t("btn_edit_ticket")}</Btn>
+                <Btn color="red" onClick={()=>setSheet("deleteConfirm")}>{t("btn_delete_ticket")}</Btn>
+              </div>}
             </div>
 
             <SL>{t("section_status")}</SL>
@@ -1281,6 +1394,50 @@ function UserForm({init,onSave,lang}){
       <FL label={t("field_pin")}><input value={f.pin} onChange={e=>s("pin")(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder={t("pin_hint")} type="password"/></FL>
       <FL label={t("field_role")}><select value={f.role} onChange={e=>s("role")(e.target.value)}><option value="technician">{t("role_tech")}</option><option value="admin">{t("role_admin")}</option></select></FL>
       <Btn color="blue" onClick={()=>{if(!f.name||!f.pin)return;onSave(f);}}>{t("btn_save")}</Btn>
+    </div>
+  );
+}
+/* ═══════════════════════════════════════════
+   TICKET EDIT FORM (Admin only)
+═══════════════════════════════════════════ */
+function TicketEditForm({ticket,onSave,lang}){
+  const t=(k,v)=>tx(lang,k,v);
+  const [f,setF]=useState({
+    client:ticket.client||"",
+    clientPhone:ticket.clientPhone||"",
+    clientEmail:ticket.clientEmail||"",
+    equipement:ticket.equipement||"",
+    panne:ticket.panne||"",
+    technicien:ticket.technicien||"",
+    departement:ticket.departement||"",
+    priorite:ticket.priorite||"Normale",
+    statut:ticket.statut||"Ouvert",
+    commentaires:ticket.commentaires||"",
+  });
+  const s=k=>v=>setF(p=>({...p,[k]:v}));
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:9}}>
+      <FL label={t("f_client")||"Client"}><input value={f.client} onChange={e=>s("client")(e.target.value)}/></FL>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <FL label={t("f_phone")||"Téléphone"}><input value={f.clientPhone} onChange={e=>s("clientPhone")(e.target.value)} type="tel"/></FL>
+        <FL label={t("f_email")||"Email"}><input value={f.clientEmail} onChange={e=>s("clientEmail")(e.target.value)} type="email"/></FL>
+      </div>
+      <FL label={t("f_equip")||"Équipement"}><input value={f.equipement} onChange={e=>s("equipement")(e.target.value)}/></FL>
+      <FL label={t("f_fault")||"Panne"}><textarea value={f.panne} onChange={e=>s("panne")(e.target.value)} rows={3}/></FL>
+      <FL label={t("f_notes")||"Notes"}><textarea value={f.commentaires} onChange={e=>s("commentaires")(e.target.value)} rows={2}/></FL>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <FL label={t("f_prio")||"Priorité"}>
+          <select value={f.priorite} onChange={e=>s("priorite")(e.target.value)}>
+            {["Normale","Haute","Urgente"].map(p=><option key={p}>{p}</option>)}
+          </select>
+        </FL>
+        <FL label={t("f_status")||"Statut"}>
+          <select value={f.statut} onChange={e=>s("statut")(e.target.value)}>
+            {["Ouvert","En cours","En attente","Clôturé","Livré"].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </FL>
+      </div>
+      <Btn color="green" onClick={()=>onSave(f)}>{t("btn_save")||"Enregistrer"}</Btn>
     </div>
   );
 }
